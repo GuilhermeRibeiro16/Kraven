@@ -91,7 +91,7 @@ export default function Financeiro() {
       <div className="bg-gradient-to-br from-purple-900/50 via-purple-800/30 to-pink-900/50 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/30 shadow-2xl">
         <p className="text-gray-300 text-sm mb-2 uppercase tracking-wide">Fatura deste mês</p>
         <h2 className="text-5xl font-black text-white mb-2">
-          {formatarMoeda(resumo.faturas)}
+          {formatarMoeda(resumo.faturas.reduce((acc, fatura) => acc + calcularFaturaMensal(fatura), 0))}
         </h2>
         <p className="text-gray-400 text-sm mb-6">
           Valor a pagar agora • Total parcelado: {formatarMoeda(resumo.total_geral)}
