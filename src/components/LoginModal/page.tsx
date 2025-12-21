@@ -151,7 +151,7 @@ export default function LoginModal({ open, onClose }: LoginModalProps) {
             </div>
 
             <Button
-              type="submit"
+              
               disabled={loading}
               className="w-full"
             >
