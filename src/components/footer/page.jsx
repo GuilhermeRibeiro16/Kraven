@@ -140,7 +140,7 @@ export default function Footer() {
 
         {/* BOTÃO VOLTAR AO TOPO */}
         <button
-          className="  w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl flex items-center justify-center hover:scale-110 transition-all duration-300 mt-6"
+          className="  w-10 h-10 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl flex items-center justify-center hover:scale-110 transition-all duration-300 mt-8"
           onClick={scrollToTop}
         >
           <ArrowUp size={18} />

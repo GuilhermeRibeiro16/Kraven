@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { buscarEmprestimos, calcularDadosFinanceiros } from "@/services/emprestimoService";
-import { buscarFaturas, calcularResumoFinanceiro, formatarMoeda, getBancoIcon, getBancoColor, calcularTotalFatura, calcularFaturaMensal } from "@/services/faturaService";
+import { buscarFaturas, calcularResumoFinanceiro, formatarMoeda, getBancoIcon, getBancoColor, calcularTotalFatura, calcularFaturaMensal, getValorOriginalItem, getJurosItem, getValorComJurosItem } from "@/services/faturaService";
 import { DadosFinanceiros } from "@/types/emprestimo";
 import { ResumoFinanceiro, Fatura } from "@/types/fatura";
 
@@ -79,7 +79,7 @@ export default function Financeiro() {
   }
 
   return (
-    <section className="space-y-8 max-w-5xl mx-auto">
+    <section className=" pt-20 space-y-8 max-w-5xl mx-auto ">
       
       {/* Título da página */}
       <div className="mb-8">
@@ -91,7 +91,7 @@ export default function Financeiro() {
       <div className="bg-gradient-to-br from-purple-900/50 via-purple-800/30 to-pink-900/50 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/30 shadow-2xl">
         <p className="text-gray-300 text-sm mb-2 uppercase tracking-wide">Fatura deste mês</p>
         <h2 className="text-5xl font-black text-white mb-2">
-          {formatarMoeda(resumo.faturas.reduce((acc, fatura) => acc + calcularFaturaMensal(fatura), 0))}
+          {formatarMoeda(resumo.fatura_mensal)}
         </h2>
         <p className="text-gray-400 text-sm mb-6">
           Valor a pagar agora • Total parcelado: {formatarMoeda(resumo.total_geral)}
@@ -149,6 +149,10 @@ export default function Financeiro() {
                     {fatura.itens.map((item, index) => {
                       const parcelasRestantes = item.parcelas_total - item.parcelas_pagas;
                       const valorRestante = parcelasRestantes * item.valor_parcela;
+                      const valorOriginal = getValorOriginalItem(item);
+                      const juros = getJurosItem(item);
+                      const valorComJuros = getValorComJurosItem(item);
+                      const totalJuros = valorComJuros - valorOriginal;
 
                       return (
                         <div
@@ -157,14 +161,26 @@ export default function Financeiro() {
                         >
                           <div className="flex-1">
                             <p className="text-white font-semibold">{item.descricao}</p>
-                            <p className="text-gray-400 text-sm">
-                              {formatarMoeda(item.valor_parcela)}/mês • {parcelasRestantes} de {item.parcelas_total} parcelas restantes
-                            </p>
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              <p className="text-gray-400 text-sm">
+                                {formatarMoeda(item.valor_parcela)}/mês • {parcelasRestantes} de {item.parcelas_total} parcelas
+                              </p>
+                              {juros > 0 && (
+                                <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
+                                  +{juros}% juros
+                                </span>
+                              )}
+                            </div>
+                            {juros > 0 && (
+                              <p className="text-gray-500 text-xs mt-1">
+                                Original: {formatarMoeda(valorOriginal)} • Juros: {formatarMoeda(totalJuros)}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="text-white font-bold text-lg">{formatarMoeda(item.valor_parcela)}</p>
                             <p className="text-gray-400 text-xs">
-                              Total: {formatarMoeda(valorRestante)}
+                              Restante: {formatarMoeda(valorRestante)}
                             </p>
                           </div>
                         </div>

@@ -26,7 +26,14 @@ export async function buscarFaturas(userId: string): Promise<Fatura[]> {
 export function calcularTotalFatura(fatura: Fatura): number {
   return fatura.itens.reduce((total, item) => {
     const parcelas_restantes = item.parcelas_total - item.parcelas_pagas;
-    return total + (parcelas_restantes * item.valor_parcela);
+    
+    // Compatibilidade: se não tem valor_com_juros, usa o cálculo antigo
+    if (item.valor_com_juros) {
+      return total + (parcelas_restantes * item.valor_parcela);
+    } else {
+      // Dados antigos (sem juros separados)
+      return total + (parcelas_restantes * item.valor_parcela);
+    }
   }, 0);
 }
 
@@ -42,6 +49,37 @@ export function calcularFaturaMensal(fatura: Fatura): number {
   }, 0);
 }
 
+export function getValorOriginalItem(item: any): number {
+  // Se tem valor_original (dados novos), usa ele
+  if (item.valor_original !== undefined) {
+    return item.valor_original;
+  }
+  // Senão, tenta calcular reverso (dados antigos)
+  if (item.total && item.juros_percentual) {
+    return item.total / (1 + item.juros_percentual / 100);
+  }
+  // Fallback: usa o total como valor original
+  return item.total || 0;
+}
+
+export function getJurosItem(item: any): number {
+  // Se tem juros_percentual, usa ele
+  if (item.juros_percentual !== undefined) {
+    return item.juros_percentual;
+  }
+  // Fallback: 0%
+  return 0;
+}
+
+export function getValorComJurosItem(item: any): number {
+  // Se tem valor_com_juros (dados novos), usa ele
+  if (item.valor_com_juros !== undefined) {
+    return item.valor_com_juros;
+  }
+  // Senão, usa o total (dados antigos)
+  return item.total || 0;
+}
+
 export function calcularResumoFinanceiro(
   faturas: Fatura[],
   valorEmprestimos: number
@@ -50,10 +88,16 @@ export function calcularResumoFinanceiro(
     return total + calcularTotalFatura(fatura);
   }, 0);
 
+  // Calcula o total da fatura MENSAL (o que vai pagar este mês)
+  const fatura_mensal = faturas.reduce((total, fatura) => {
+    return total + calcularFaturaMensal(fatura);
+  }, 0);
+
   return {
     total_faturas,
     total_emprestimos: valorEmprestimos,
     total_geral: total_faturas + valorEmprestimos,
+    fatura_mensal, // Adiciona o valor mensal
     faturas,
   };
 }

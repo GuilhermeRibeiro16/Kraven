@@ -3,7 +3,7 @@
 import { Bell, Search, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
-import UserMenu from "@/app/dashboard/perfil/page"
+import UserMenu from "@/components/UserMenu/UserMenu";
 
 export default function DashboardHeader() {
   const [searchFocus, setSearchFocus] = useState(false);
@@ -19,7 +19,7 @@ export default function DashboardHeader() {
             <h1 className="text-2xl font-black bg-gradient-to-r from-purple-600 to-purple-900 bg-clip-text text-transparent">
               kraven
             </h1>
-          </Link>
+          </Link> 
 
           {/* BUSCA - Desktop */}
           <div className="hidden md:flex flex-1 max-w-md mx-8">
@@ -84,5 +84,3 @@ export default function DashboardHeader() {
     </header>
   );
 }
-
-

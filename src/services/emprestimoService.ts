@@ -34,7 +34,16 @@ export function calcularDadosFinanceiros(emprestimos: Emprestimo[]): DadosFinanc
   const parcelas_restantes = emprestimoAtivo.parcelas_total - emprestimoAtivo.parcelas_pagas;
   const valor_devido = parcelas_restantes * emprestimoAtivo.valor_parcela;
   const percentual_quitado = (emprestimoAtivo.parcelas_pagas / emprestimoAtivo.parcelas_total) * 100;
-  const total_juros = emprestimoAtivo.valor_total * (emprestimoAtivo.juros_percentual / 100);
+  
+  // Compatibilidade: calcula juros baseado nos campos disponíveis
+  let total_juros = 0;
+  if (emprestimoAtivo.valor_original && emprestimoAtivo.valor_total) {
+    // Dados novos: diferença entre total e original
+    total_juros = emprestimoAtivo.valor_total - emprestimoAtivo.valor_original;
+  } else if (emprestimoAtivo.valor_total && emprestimoAtivo.juros_percentual) {
+    // Dados antigos: calcula % do total
+    total_juros = emprestimoAtivo.valor_total * (emprestimoAtivo.juros_percentual / 100);
+  }
 
   return {
     valor_devido,

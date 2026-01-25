@@ -9,28 +9,73 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
+
+interface UserData {
+  uid: string;
+  email: string | null;
+  role: "admin" | "cliente";
+  nome?: string;
+}
 
 interface AuthContextType {
   user: User | null;
+  userData: UserData | null;
   loading: boolean;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Busca dados do usuário no Firestore
+  const fetchUserData = async (uid: string) => {
+    try {
+      const userDoc = await getDoc(doc(db, "users", uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        setUserData({
+          uid,
+          email: user?.email || null,
+          role: data.role || "cliente",
+          nome: data.nome,
+        });
+      } else {
+        setUserData({
+          uid,
+          email: user?.email || null,
+          role: "cliente",
+        });
+      }
+    } catch (error) {
+      console.error("Erro ao buscar dados do usuário:", error);
+      setUserData({
+        uid,
+        email: user?.email || null,
+        role: "cliente",
+      });
+    }
+  };
+
   // Monitora mudanças no estado de autenticação
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
+      if (user) {
+        await fetchUserData(user.uid);
+      } else {
+        setUserData(null);
+      }
       setLoading(false);
     });
 
@@ -74,10 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
+        userData,
         loading,
         loginWithEmail,
         loginWithGoogle,
         logout,
+        isAdmin: userData?.role === "admin",
       }}
     >
       {children}

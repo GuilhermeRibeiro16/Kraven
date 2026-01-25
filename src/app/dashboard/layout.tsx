@@ -18,8 +18,10 @@ export default function DashboardLayout({
         <Sidebar />
 
         {/* Conteúdo principal */}
-        <main className="flex-1 pt-24 pb-20 px-4 md:pl-72 md:pb-8">
+      <main className="  flex-1 w-full pt-20 pb-20 px-4 lg:pl-72 lg:pb-8">
+        <div className="max-w-7xl mx-auto w-full">
           {children}
+          </div>
         </main>
       </div>
 

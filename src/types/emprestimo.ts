@@ -2,15 +2,17 @@ export interface HistoricoItem {
   valor: number;
   data: string;
   status: "pago" | "pendente";
+  quantidade_parcelas?: number;
 }
 
 export interface Emprestimo {
   id: string;
-  valor_total: number;
+  valor_original: number;      // Valor SEM juros
+  juros_percentual: number;    // % de juros
+  valor_total: number;         // Valor COM juros
   parcelas_total: number;
   parcelas_pagas: number;
   valor_parcela: number;
-  juros_percentual: number;
   vencimento: string;
   status: "em_dia" | "atrasado" | "quitado";
   created_at: string;
