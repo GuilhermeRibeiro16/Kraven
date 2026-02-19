@@ -80,7 +80,7 @@ export default function Sobre() {
               </div>
             </div>
           </div>
-                      {/* barra lado */}
+             {/* barra lado */}
              <div className="relative">
             <div className="relative bg-white/10 backdrop-blur-xl rounded-3xl p-8 border
             border-white/20 shadow-2xl">

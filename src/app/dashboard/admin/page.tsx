@@ -58,10 +58,8 @@ export default function AdminPage() {
       for (const userDoc of snapshot.docs) {
         const userData = userDoc.data();
         
-        // Pula se for admin
         if (userData.role === "admin") continue;
 
-        // Busca faturas do cliente
         const faturasRef = collection(db, `users/${userDoc.id}/faturas`);
         const faturasSnapshot = await getDocs(faturasRef);
         
@@ -76,7 +74,6 @@ export default function AdminPage() {
           }
         });
 
-        // Busca empréstimos do cliente
         const emprestimosRef = collection(db, `users/${userDoc.id}/emprestimos`);
         const emprestimosSnapshot = await getDocs(emprestimosRef);
         
@@ -112,7 +109,7 @@ export default function AdminPage() {
 
   if (authLoading || loading) {
     return (
-      <section className=" pt-20 space-y-8 max-w-7xl mx-auto">
+      <section className="relative z-10 pt-20 px-4 sm:px-6 lg:px-8 space-y-8 max-w-7xl mx-auto">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -128,7 +125,7 @@ export default function AdminPage() {
   }
 
   return (
-    <section className=" pt-20 space-y-8 max-w-7xl mx-auto">
+    <section className="relative z-10 pt-20 px-4 sm:px-6 lg:px-8 pb-20 space-y-8 max-w-7xl mx-auto">
       
       {/* Título */}
       <div className="mb-8">
@@ -138,6 +135,30 @@ export default function AdminPage() {
         <p className="text-gray-400">Gerencie todos os clientes e empréstimos</p>
       </div>
 
+      {/* Botões de Ação Rápida */}
+      <div className="flex flex-wrap gap-3 mb-6">
+        <Button 
+          onClick={() => setModalCliente(true)} 
+          variant="primary" 
+          className="flex items-center gap-2"
+        >
+          <UserPlus size={20} /> Adicionar Cliente
+        </Button>
+        <Button 
+          onClick={() => setModalFatura(true)} 
+          variant="secondary" 
+          className="flex items-center gap-2"
+        >
+          <Plus size={20} /> Adicionar Fatura
+        </Button>
+        <Button 
+          onClick={() => setModalEmprestimo(true)} 
+          variant="secondary" 
+          className="flex items-center gap-2"
+        >
+          <CreditCard size={20} /> Adicionar Empréstimo
+        </Button>
+      </div>
 
       {/* Cards de Resumo */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -181,7 +202,7 @@ export default function AdminPage() {
             {clientes.map((cliente) => (
               <div
                 key={cliente.uid}
-                className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10 hover:border-purple-500/50 transition-all duration-300 cursor-pointer group"
+                className="relative z-10 bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10 hover:border-purple-500/50 transition-all duration-300 cursor-pointer group"
                 onClick={() => router.push(`/dashboard/admin/cliente/${cliente.uid}`)}
               >
                 <div className="flex items-start justify-between mb-4">
@@ -206,19 +227,6 @@ export default function AdminPage() {
           </div>
         )}
       </div>
-            {/* Botões de Ação Rápida */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        <Button onClick={() => setModalCliente(true)} variant="primary" className="flex items-center gap-2">
-          <UserPlus size={20} /> Adicionar Cliente
-        </Button>
-        <Button onClick={() => setModalFatura(true)} variant="secondary" className="flex items-center gap-2">
-          <Plus size={20} /> Adicionar Fatura
-        </Button>
-        <Button onClick={() => setModalEmprestimo(true)} variant="secondary" className="flex items-center gap-2">
-          <CreditCard size={20} /> Adicionar Empréstimo
-        </Button>
-      </div>
-
 
       {/* Modals */}
       <AdicionarClienteModal

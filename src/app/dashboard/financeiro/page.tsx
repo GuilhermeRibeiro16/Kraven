@@ -4,14 +4,20 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { buscarEmprestimos, calcularDadosFinanceiros } from "@/services/emprestimoService";
 import { buscarFaturas, calcularResumoFinanceiro, formatarMoeda, getBancoIcon, getBancoColor, calcularTotalFatura, calcularFaturaMensal, getValorOriginalItem, getJurosItem, getValorComJurosItem } from "@/services/faturaService";
-import { DadosFinanceiros } from "@/types/emprestimo";
+import { DadosFinanceiros, Emprestimo } from "@/types/emprestimo";
 import { ResumoFinanceiro, Fatura } from "@/types/fatura";
+
+interface FaturaPorBanco {
+  banco: string;
+  faturas: Fatura[];
+}
 
 export default function Financeiro() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [resumo, setResumo] = useState<ResumoFinanceiro | null>(null);
   const [dadosEmprestimos, setDadosEmprestimos] = useState<DadosFinanceiros | null>(null);
+  const [emprestimosLista, setEmprestimosLista] = useState<Emprestimo[]>([]);
 
   useEffect(() => {
     if (user) {
@@ -25,17 +31,16 @@ export default function Financeiro() {
 
     setLoading(true);
     try {
-      // Busca faturas e empréstimos
       const [faturas, emprestimos] = await Promise.all([
         buscarFaturas(user.uid),
         buscarEmprestimos(user.uid),
       ]);
 
-      // Calcula dados dos empréstimos
+      setEmprestimosLista(emprestimos);
+
       const dadosEmp = calcularDadosFinanceiros(emprestimos);
       setDadosEmprestimos(dadosEmp);
 
-      // Calcula resumo financeiro total
       const valorEmprestimos = dadosEmp?.valor_devido || 0;
       const resumoCalc = calcularResumoFinanceiro(faturas, valorEmprestimos);
       setResumo(resumoCalc);
@@ -44,6 +49,34 @@ export default function Financeiro() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Agrupa faturas por banco
+  const agruparFaturasPorBanco = (): FaturaPorBanco[] => {
+    if (!resumo) return [];
+    
+    const grupos: { [key: string]: Fatura[] } = {};
+    
+    resumo.faturas.forEach(fatura => {
+      if (!grupos[fatura.banco]) {
+        grupos[fatura.banco] = [];
+      }
+      grupos[fatura.banco].push(fatura);
+    });
+
+    return Object.entries(grupos).map(([banco, faturas]) => ({
+      banco,
+      faturas
+    }));
+  };
+
+  // Ordena itens por proximidade de quitação
+  const ordenarItensPorProximidade = (itens: any[]) => {
+    return [...itens].sort((a, b) => {
+      const restantesA = a.parcelas_total - a.parcelas_pagas;
+      const restantesB = b.parcelas_total - b.parcelas_pagas;
+      return restantesA - restantesB;
+    });
   };
 
   if (loading) {
@@ -78,8 +111,10 @@ export default function Financeiro() {
     );
   }
 
+  const faturasPorBanco = agruparFaturasPorBanco();
+
   return (
-    <section className=" pt-20 space-y-8 max-w-5xl mx-auto ">
+    <section className="space-y-8 max-w-5xl mx-auto">
       
       {/* Título da página */}
       <div className="mb-8">
@@ -111,77 +146,95 @@ export default function Financeiro() {
         </div>
       </div>
 
-      {/* Faturas por Banco */}
-      {resumo.faturas.length > 0 && (
+      {/* Faturas Agrupadas por Banco */}
+      {faturasPorBanco.length > 0 && (
         <div>
           <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
             💳 Faturas de Cartão
           </h3>
 
-          <div className="space-y-4">
-            {resumo.faturas.map((fatura) => {
-              const totalFatura = calcularTotalFatura(fatura);
-              const faturaMensal = calcularFaturaMensal(fatura);
+          <div className="space-y-6">
+            {faturasPorBanco.map(({ banco, faturas: faturasGrupo }) => {
+              const todosItens = faturasGrupo.flatMap(f => 
+                f.itens.map(item => ({ ...item, faturaId: f.id, vencimento: f.vencimento }))
+              );
+              const itensOrdenados = ordenarItensPorProximidade(todosItens);
+              const totalBanco = faturasGrupo.reduce((sum, f) => sum + calcularTotalFatura(f), 0);
+              const mensalBanco = faturasGrupo.reduce((sum, f) => sum + calcularFaturaMensal(f), 0);
 
               return (
-                <div
-                  key={fatura.id}
-                  className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden hover:border-purple-500/50 transition-all duration-300"
-                >
-                  {/* Header do banco */}
-                  <div className={`bg-gradient-to-r ${getBancoColor(fatura.banco)} p-4 flex items-center justify-between`}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-3xl">{getBancoIcon(fatura.banco)}</span>
-                      <div>
-                        <h4 className="text-white font-bold text-lg capitalize">{fatura.banco}</h4>
-                        <p className="text-white/80 text-sm">Vencimento: {new Date(fatura.vencimento).toLocaleDateString("pt-BR")}</p>
+                <div key={banco} className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden hover:border-purple-500/50 transition-all duration-300">
+                  
+                  {/* Header do Banco */}
+                  <div className={`bg-gradient-to-r ${getBancoColor(banco)} p-4`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-3xl">{getBancoIcon(banco)}</span>
+                        <div>
+                          <h4 className="text-white font-bold text-lg capitalize">{banco}</h4>
+                          <p className="text-white/80 text-sm">{itensOrdenados.length} itens</p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-white/80 text-xs">Este mês</p>
-                      <p className="text-white font-bold text-3xl">{formatarMoeda(faturaMensal)}</p>
-                      <p className="text-white/60 text-xs mt-1">Total: {formatarMoeda(totalFatura)}</p>
+                      <div className="text-right">
+                        <p className="text-white/80 text-xs">Este mês</p>
+                        <p className="text-white font-bold text-3xl">{formatarMoeda(mensalBanco)}</p>
+                        <p className="text-white/60 text-xs mt-1">Total: {formatarMoeda(totalBanco)}</p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Itens da fatura */}
+                  {/* Itens Ordenados */}
                   <div className="p-6 space-y-3">
-                    {fatura.itens.map((item, index) => {
+                    {itensOrdenados.map((item, index) => {
                       const parcelasRestantes = item.parcelas_total - item.parcelas_pagas;
                       const valorRestante = parcelasRestantes * item.valor_parcela;
                       const valorOriginal = getValorOriginalItem(item);
                       const juros = getJurosItem(item);
                       const valorComJuros = getValorComJurosItem(item);
                       const totalJuros = valorComJuros - valorOriginal;
+                      const percentual = (item.parcelas_pagas / item.parcelas_total) * 100;
 
                       return (
                         <div
                           key={index}
-                          className="flex items-center justify-between p-4 bg-white/5 rounded-xl hover:bg-white/10 transition-all duration-200"
+                          className="bg-white/5 rounded-xl p-4 hover:bg-white/10 transition-all duration-200"
                         >
-                          <div className="flex-1">
-                            <p className="text-white font-semibold">{item.descricao}</p>
-                            <div className="flex flex-wrap gap-2 mt-1">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-white font-semibold">{item.descricao}</p>
+                                <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-bold">
+                                  {item.parcelas_pagas}/{item.parcelas_total}
+                                </span>
+                                {juros > 0 && (
+                                  <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
+                                    +{juros}% juros
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-gray-400 text-sm">
-                                {formatarMoeda(item.valor_parcela)}/mês • {parcelasRestantes} de {item.parcelas_total} parcelas
+                                {formatarMoeda(item.valor_parcela)}/mês • Faltam {parcelasRestantes} parcelas
                               </p>
                               {juros > 0 && (
-                                <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
-                                  +{juros}% juros
-                                </span>
+                                <p className="text-gray-500 text-xs mt-1">
+                                  Original: {formatarMoeda(valorOriginal)} • Juros: {formatarMoeda(totalJuros)}
+                                </p>
                               )}
                             </div>
-                            {juros > 0 && (
-                              <p className="text-gray-500 text-xs mt-1">
-                                Original: {formatarMoeda(valorOriginal)} • Juros: {formatarMoeda(totalJuros)}
+                            <div className="text-right ml-3">
+                              <p className="text-white font-bold text-lg">{formatarMoeda(item.valor_parcela)}</p>
+                              <p className="text-gray-400 text-xs">
+                                Restante: {formatarMoeda(valorRestante)}
                               </p>
-                            )}
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-white font-bold text-lg">{formatarMoeda(item.valor_parcela)}</p>
-                            <p className="text-gray-400 text-xs">
-                              Restante: {formatarMoeda(valorRestante)}
-                            </p>
+
+                          {/* Barra de Progresso */}
+                          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-1.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                              style={{ width: `${percentual}%` }}
+                            />
                           </div>
                         </div>
                       );
@@ -200,33 +253,56 @@ export default function Financeiro() {
           💰 Empréstimos em Dinheiro
         </h3>
 
-        {dadosEmprestimos && dadosEmprestimos.valor_devido > 0 ? (
-          <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <p className="text-gray-400 text-sm">Valor devido</p>
-                <p className="text-3xl font-bold text-white">{formatarMoeda(dadosEmprestimos.valor_devido)}</p>
-              </div>
-              <div className={`px-4 py-2 rounded-full ${
-                dadosEmprestimos.status === "em_dia" ? "bg-green-500/20 text-green-400" :
-                dadosEmprestimos.status === "atrasado" ? "bg-red-500/20 text-red-400" :
-                "bg-blue-500/20 text-blue-400"
-              }`}>
-                {dadosEmprestimos.status === "em_dia" ? "Em dia" :
-                 dadosEmprestimos.status === "atrasado" ? "Atrasado" :
-                 "Quitado"}
-              </div>
-            </div>
+        {emprestimosLista.length > 0 ? (
+          <div className="space-y-4">
+            {emprestimosLista.map((emprestimo) => {
+              const parcelasRestantes = emprestimo.parcelas_total - emprestimo.parcelas_pagas;
+              const valorDevido = parcelasRestantes * emprestimo.valor_parcela;
+              const percentualQuitado = (emprestimo.parcelas_pagas / emprestimo.parcelas_total) * 100;
 
-            <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-2">
-              <div 
-                className="h-2 bg-gradient-to-r from-green-500 to-emerald-400 rounded-full transition-all duration-500"
-                style={{ width: `${dadosEmprestimos.percentual_quitado}%` }}
-              />
-            </div>
-            <p className="text-sm text-gray-400">
-              {dadosEmprestimos.percentual_quitado}% quitado • {dadosEmprestimos.parcelas_restantes} parcelas restantes
-            </p>
+              return (
+                <div key={emprestimo.id} className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="text-white font-bold text-lg">Empréstimo</p>
+                        <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded font-bold">
+                          {emprestimo.parcelas_pagas}/{emprestimo.parcelas_total}
+                        </span>
+                        {emprestimo.juros_percentual > 0 && (
+                          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">
+                            +{emprestimo.juros_percentual}% juros
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-gray-400 text-sm">
+                        {formatarMoeda(emprestimo.valor_parcela)}/mês • Faltam {parcelasRestantes} parcelas
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-gray-400 text-sm">Valor devido</p>
+                      <p className="text-white font-bold text-2xl">{formatarMoeda(valorDevido)}</p>
+                    </div>
+                  </div>
+
+                  <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-2">
+                    <div 
+                      className="h-2 bg-gradient-to-r from-green-500 to-emerald-400 rounded-full transition-all duration-500"
+                      style={{ width: `${percentualQuitado}%` }}
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-sm">
+                    <p className="text-gray-400">
+                      {Math.round(percentualQuitado)}% quitado
+                    </p>
+                    <p className="text-gray-400">
+                      Vencimento: {new Date(emprestimo.vencimento).toLocaleDateString("pt-BR")}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 text-center">

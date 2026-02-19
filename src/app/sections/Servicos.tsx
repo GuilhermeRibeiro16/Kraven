@@ -3,7 +3,7 @@ export default function Servicos() {
     <section
     id="servicos"
     className="py-20 min-h-screen bg-amber-300">
-        <h1 className="text-black text-2xl">opa casada</h1>
+        <h1 className="text-black text-2xl">opa</h1>
 
     </section>
   )

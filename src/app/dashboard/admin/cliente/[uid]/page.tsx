@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatarMoeda, getBancoIcon, getBancoColor, calcularFaturaMensal, calcularTotalFatura, getValorOriginalItem, getJurosItem } from "@/services/faturaService";
-import { ArrowLeft, CreditCard, DollarSign, Calendar, TrendingUp, Edit, Trash2 } from "lucide-react";
+import { ArrowLeft, CreditCard, DollarSign, Calendar, TrendingUp, Edit, Trash2, CheckCircle } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { Fatura } from "@/types/fatura";
 import { Emprestimo } from "@/types/emprestimo";
@@ -20,6 +20,11 @@ interface ClienteInfo {
   nome: string;
   email: string;
   role: string;
+}
+
+interface FaturaPorBanco {
+  banco: string;
+  faturas: Fatura[];
 }
 
 export default function ClienteDetalhesPage() {
@@ -58,18 +63,9 @@ export default function ClienteDetalhesPage() {
 
   const uid = params.uid as string;
 
-  useEffect(() => {
-    if (!authLoading && !isAdmin) {
-      router.push("/dashboard/financeiro");
-    } else if (isAdmin && uid) {
-      carregarDadosCliente();
-    }
-  }, [isAdmin, authLoading, uid]); // Removemos router e carregarDadosCliente das dependências
-
   const carregarDadosCliente = async () => {
     setLoading(true);
     try {
-      // Busca informações do cliente
       const clienteDoc = await getDoc(doc(db, "users", uid));
       if (clienteDoc.exists()) {
         const data = clienteDoc.data();
@@ -81,7 +77,6 @@ export default function ClienteDetalhesPage() {
         });
       }
 
-      // Busca faturas
       const faturasRef = collection(db, `users/${uid}/faturas`);
       const faturasSnapshot = await getDocs(faturasRef);
       const faturasData: Fatura[] = [];
@@ -90,7 +85,6 @@ export default function ClienteDetalhesPage() {
       });
       setFaturas(faturasData);
 
-      // Busca empréstimos
       const emprestimosRef = collection(db, `users/${uid}/emprestimos`);
       const emprestimosSnapshot = await getDocs(emprestimosRef);
       const emprestimosData: Emprestimo[] = [];
@@ -99,7 +93,6 @@ export default function ClienteDetalhesPage() {
       });
       setEmprestimos(emprestimosData);
 
-      // Calcula resumo
       let totalFaturas = 0;
       let faturaMensal = 0;
       faturasData.forEach((fatura) => {
@@ -126,6 +119,73 @@ export default function ClienteDetalhesPage() {
     }
   };
 
+  // Função para pagar toda a fatura de um banco
+  const pagarTudoBanco = async (banco: string) => {
+    try {
+      const faturasdobanco = faturas.filter(f => f.banco === banco);
+      
+      for (const fatura of faturasdobanco) {
+        const itensAtualizados = fatura.itens.map(item => ({
+          ...item,
+          parcelas_pagas: item.parcelas_total,
+          historico: [
+            ...(item.historico || []),
+            {
+              data: new Date().toISOString(),
+              parcelas_pagas: item.parcelas_total - item.parcelas_pagas,
+              valor: (item.parcelas_total - item.parcelas_pagas) * item.valor_parcela,
+            }
+          ]
+        }));
+
+        await updateDoc(doc(db, `users/${uid}/faturas/${fatura.id}`), {
+          itens: itensAtualizados,
+          status: "paga"
+        });
+      }
+
+      await carregarDadosCliente();
+      alert(`✅ Todas as faturas do ${banco.toUpperCase()} foram pagas!`);
+    } catch (error) {
+      console.error("Erro ao pagar fatura:", error);
+      alert("❌ Erro ao processar pagamento");
+    }
+  };
+
+  // Agrupa faturas por banco
+  const agruparFaturasPorBanco = (): FaturaPorBanco[] => {
+    const grupos: { [key: string]: Fatura[] } = {};
+    
+    faturas.forEach(fatura => {
+      if (!grupos[fatura.banco]) {
+        grupos[fatura.banco] = [];
+      }
+      grupos[fatura.banco].push(fatura);
+    });
+
+    return Object.entries(grupos).map(([banco, faturas]) => ({
+      banco,
+      faturas
+    }));
+  };
+
+  // Ordena itens por proximidade de quitação
+  const ordenarItensPorProximidade = (itens: any[]) => {
+    return [...itens].sort((a, b) => {
+      const restantesA = a.parcelas_total - a.parcelas_pagas;
+      const restantesB = b.parcelas_total - b.parcelas_pagas;
+      return restantesA - restantesB;
+    });
+  };
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.push("/dashboard/financeiro");
+    } else if (isAdmin && uid) {
+      carregarDadosCliente();
+    }
+  }, [isAdmin, authLoading, uid]);
+
   if (authLoading || loading) {
     return (
       <section className="space-y-8 max-w-7xl mx-auto">
@@ -143,8 +203,10 @@ export default function ClienteDetalhesPage() {
     return null;
   }
 
+  const faturasPorBanco = agruparFaturasPorBanco();
+
   return (
-    <section className=" pt-20 space-y-8 max-w-7xl mx-auto">
+    <section className="relative z-10 pt-20 px-4 sm:px-6 lg:px-8 pb-20 space-y-8 max-w-7xl mx-auto">
       
       {/* Header */}
       <div className="flex items-center gap-4 mb-8">
@@ -195,121 +257,127 @@ export default function ClienteDetalhesPage() {
         </div>
       </div>
 
-      {/* Faturas */}
+      {/* Faturas Agrupadas por Banco */}
       <div>
         <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
           💳 Faturas de Cartão ({faturas.length})
         </h3>
 
-        {faturas.length === 0 ? (
+        {faturasPorBanco.length === 0 ? (
           <div className="bg-white/5 backdrop-blur-xl rounded-2xl p-8 border border-white/10 text-center">
             <p className="text-gray-400">Nenhuma fatura cadastrada</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {faturas.map((fatura) => {
-              const faturaMensal = calcularFaturaMensal(fatura);
-              const totalFatura = calcularTotalFatura(fatura);
+          <div className="space-y-6">
+            {faturasPorBanco.map(({ banco, faturas: faturasGrupo }) => {
+              const todosItens = faturasGrupo.flatMap(f => 
+                f.itens.map(item => ({ ...item, faturaId: f.id, vencimento: f.vencimento }))
+              );
+              const itensOrdenados = ordenarItensPorProximidade(todosItens);
+              const totalBanco = faturasGrupo.reduce((sum, f) => sum + calcularTotalFatura(f), 0);
+              const mensalBanco = faturasGrupo.reduce((sum, f) => sum + calcularFaturaMensal(f), 0);
 
               return (
-                <div
-                  key={fatura.id}
-                  className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden"
-                >
-                  {/* Header */}
-                  <div className={`bg-gradient-to-r ${getBancoColor(fatura.banco)} p-4`}>
-                    <div className="flex items-center justify-between">
+                <div key={banco} className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 overflow-hidden">
+                  
+                  {/* Header do Banco com Botão Pagar Tudo */}
+                  <div className={`bg-gradient-to-r ${getBancoColor(banco)} p-4`}>
+                    <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <span className="text-3xl">{getBancoIcon(fatura.banco)}</span>
+                        <span className="text-3xl">{getBancoIcon(banco)}</span>
                         <div>
-                          <h4 className="text-white font-bold text-lg capitalize">{fatura.banco}</h4>
-                          <p className="text-white/80 text-sm">
-                            Vencimento: {new Date(fatura.vencimento).toLocaleDateString("pt-BR")}
-                          </p>
+                          <h4 className="text-white font-bold text-lg capitalize">{banco}</h4>
+                          <p className="text-white/80 text-sm">{itensOrdenados.length} itens</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="text-white/80 text-xs">Este mês</p>
-                        <p className="text-white font-bold text-2xl">{formatarMoeda(faturaMensal)}</p>
-                        <p className="text-white/60 text-xs">Total: {formatarMoeda(totalFatura)}</p>
+                        <p className="text-white font-bold text-2xl">{formatarMoeda(mensalBanco)}</p>
+                        <p className="text-white/60 text-xs">Total: {formatarMoeda(totalBanco)}</p>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Itens */}
-                  <div className="p-4 space-y-2">
-                    {fatura.itens.map((item, index) => {
-                      const parcelasRestantes = item.parcelas_total - item.parcelas_pagas;
-                      const valorOriginal = getValorOriginalItem(item);
-                      const juros = getJurosItem(item);
-
-                      return (
-                        <div key={index} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                          <div>
-                            <p className="text-white font-medium">{item.descricao}</p>
-                            <p className="text-gray-400 text-sm">
-                              {parcelasRestantes} de {item.parcelas_total} parcelas • {formatarMoeda(item.valor_parcela)}/mês
-                            </p>
-                            {juros > 0 && (
-                              <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded mt-1 inline-block">
-                                +{juros}% juros
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-white font-bold">{formatarMoeda(item.valor_parcela)}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Ações */}
-                  <div className="p-4 border-t border-white/10 flex gap-2">
-                    <Button 
-                      variant="primary" 
-                      className="flex-1 flex items-center justify-center gap-2"
+                    
+                    {/* Botão Pagar Tudo */}
+                    <Button
+                      variant="secondary"
+                      className="w-full flex items-center justify-center gap-2 bg-white/20 hover:bg-white/30 text-white border-white/30"
                       onClick={() => {
-                        // Pega o primeiro item com parcelas restantes
-                        const itemComParcelas = fatura.itens.find(
-                          item => item.parcelas_pagas < item.parcelas_total
-                        );
-                        if (itemComParcelas) {
-                          setPagamentoInfo({
-                            tipo: "fatura",
-                            itemId: fatura.id,
-                            descricao: `${fatura.banco} - ${itemComParcelas.descricao}`,
-                            valorParcela: itemComParcelas.valor_parcela,
-                            parcelasPagas: itemComParcelas.parcelas_pagas,
-                            parcelasTotal: itemComParcelas.parcelas_total,
-                          });
-                          setModalPagamento(true);
+                        if (confirm(`Pagar TODAS as parcelas restantes do ${banco.toUpperCase()}?`)) {
+                          pagarTudoBanco(banco);
                         }
                       }}
                     >
-                      <DollarSign size={16} /> Registrar Pagamento
+                      <CheckCircle size={16} /> Pagar Tudo
                     </Button>
-                    <button 
-                      className="p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
-                      onClick={() => {
-                        console.log("Editando fatura:", fatura); // Debug
-                        setFaturaParaEditar(fatura);
-                        setModalEditarFatura(true);
-                      }}
-                    >
-                      <Edit size={18} />
-                    </button>
-                    <button 
-                      className="p-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-400 hover:text-red-300"
-                      onClick={() => {
-                        setExclusaoInfo({
-                          tipo: "fatura",
-                          itemId: fatura.id,
-                          descricao: `Fatura ${fatura.banco}`,
-                        });
-                        setModalExclusao(true);
-                      }}
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                  </div>
+
+                  {/* Itens Ordenados */}
+                  <div className="p-4 space-y-2">
+                    {itensOrdenados.map((item, index) => {
+                      const parcelasRestantes = item.parcelas_total - item.parcelas_pagas;
+                      const percentual = (item.parcelas_pagas / item.parcelas_total) * 100;
+                      const juros = getJurosItem(item);
+
+                      return (
+                        <div key={index} className="bg-white/5 rounded-lg p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="text-white font-medium">{item.descricao}</p>
+                                <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-bold">
+                                  {item.parcelas_pagas}/{item.parcelas_total}
+                                </span>
+                                {juros > 0 && (
+                                  <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
+                                    +{juros}% juros
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-gray-400 text-sm">
+                                {formatarMoeda(item.valor_parcela)}/mês • Faltam {parcelasRestantes} parcelas
+                              </p>
+                              
+                              {/* Barra de Progresso */}
+                              <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                  className="h-1.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                                  style={{ width: `${percentual}%` }}
+                                />
+                              </div>
+                            </div>
+                            
+                            {/* Botões de Ação */}
+                            <div className="flex gap-1 ml-3">
+                              <button
+                                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
+                                onClick={() => {
+                                  const fatura = faturasGrupo.find(f => f.id === item.faturaId);
+                                  if (fatura) {
+                                    setFaturaParaEditar(fatura);
+                                    setModalEditarFatura(true);
+                                  }
+                                }}
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button
+                                className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-400 hover:text-red-300"
+                                onClick={() => {
+                                  setExclusaoInfo({
+                                    tipo: "fatura",
+                                    itemId: item.faturaId,
+                                    descricao: `${banco} - ${item.descricao}`,
+                                  });
+                                  setModalExclusao(true);
+                                }}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -336,15 +404,15 @@ export default function ClienteDetalhesPage() {
               const percentualQuitado = (emprestimo.parcelas_pagas / emprestimo.parcelas_total) * 100;
 
               return (
-                <div
-                  key={emprestimo.id}
-                  className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10"
-                >
+                <div key={emprestimo.id} className="bg-white/5 backdrop-blur-xl rounded-2xl p-6 border border-white/10">
                   <div className="flex items-center justify-between mb-4">
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <CreditCard className="w-5 h-5 text-purple-400" />
                         <p className="text-white font-bold text-lg">Empréstimo</p>
+                        <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded font-bold">
+                          {emprestimo.parcelas_pagas}/{emprestimo.parcelas_total}
+                        </span>
                         {emprestimo.juros_percentual > 0 && (
                           <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">
                             +{emprestimo.juros_percentual}% juros
@@ -352,7 +420,7 @@ export default function ClienteDetalhesPage() {
                         )}
                       </div>
                       <p className="text-gray-400 text-sm">
-                        {emprestimo.parcelas_pagas}/{emprestimo.parcelas_total} parcelas pagas
+                        {formatarMoeda(emprestimo.valor_parcela)}/mês • Faltam {parcelasRestantes} parcelas
                       </p>
                     </div>
                     <div className="text-right">
@@ -374,8 +442,8 @@ export default function ClienteDetalhesPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <Button 
-                      variant="primary" 
+                    <Button
+                      variant="primary"
                       className="flex-1 flex items-center justify-center gap-2"
                       onClick={() => {
                         setPagamentoInfo({
@@ -391,7 +459,7 @@ export default function ClienteDetalhesPage() {
                     >
                       <DollarSign size={16} /> Registrar Pagamento
                     </Button>
-                    <button 
+                    <button
                       className="p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-gray-400 hover:text-white"
                       onClick={() => {
                         setEmprestimoParaEditar(emprestimo);
@@ -400,7 +468,7 @@ export default function ClienteDetalhesPage() {
                     >
                       <Edit size={18} />
                     </button>
-                    <button 
+                    <button
                       className="p-3 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-colors text-red-400 hover:text-red-300"
                       onClick={() => {
                         setExclusaoInfo({
@@ -421,7 +489,7 @@ export default function ClienteDetalhesPage() {
         )}
       </div>
 
-      {/* Modal de Registrar Pagamento */}
+      {/* Modals */}
       {pagamentoInfo && (
         <RegistrarPagamentoModal
           open={modalPagamento}
@@ -430,7 +498,7 @@ export default function ClienteDetalhesPage() {
             setPagamentoInfo(null);
           }}
           onSuccess={() => {
-            carregarDadosCliente(); // Recarrega os dados
+            carregarDadosCliente();
           }}
           tipo={pagamentoInfo.tipo}
           clienteUid={uid}
@@ -442,7 +510,6 @@ export default function ClienteDetalhesPage() {
         />
       )}
 
-      {/* Modal de Confirmar Exclusão */}
       {exclusaoInfo && (
         <ConfirmarExclusaoModal
           open={modalExclusao}
@@ -451,7 +518,7 @@ export default function ClienteDetalhesPage() {
             setExclusaoInfo(null);
           }}
           onSuccess={() => {
-            carregarDadosCliente(); // Recarrega os dados
+            carregarDadosCliente();
           }}
           tipo={exclusaoInfo.tipo}
           clienteUid={uid}
@@ -460,9 +527,7 @@ export default function ClienteDetalhesPage() {
         />
       )}
 
-
-      {/* Modal de Editar Fatura */} 
-        {faturaParaEditar && (
+      {faturaParaEditar && (
         <EditarFaturaModal
           open={modalEditarFatura}
           onClose={() => {
@@ -470,13 +535,13 @@ export default function ClienteDetalhesPage() {
             setFaturaParaEditar(null);
           }}
           onSuccess={() => {
-            carregarDadosCliente(); // Recarrega os dados
+            carregarDadosCliente();
           }}
           clienteUid={uid}
           fatura={faturaParaEditar}
         />
       )}
-      {/* Modal de Editar Empréstimo */}
+
       {emprestimoParaEditar && (
         <EditarEmprestimoModal
           open={modalEditarEmprestimo}
@@ -485,7 +550,7 @@ export default function ClienteDetalhesPage() {
             setEmprestimoParaEditar(null);
           }}
           onSuccess={() => {
-            carregarDadosCliente(); // Recarrega os dados
+            carregarDadosCliente();
           }}
           clienteUid={uid}
           emprestimo={emprestimoParaEditar}
